@@ -131,7 +131,7 @@ echo ""
 
 # Run training with Hybrid QLoRA
 echo "Starting Hybrid QLoRA training..."
-python train.py \
+$SLURM_TMPDIR/qwen_env/bin/python train.py \
     --model_name_or_path $MODEL_NAME \
     --use_qlora True \
     --train_embeddings True \

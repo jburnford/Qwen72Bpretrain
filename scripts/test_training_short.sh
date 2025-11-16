@@ -5,7 +5,7 @@
 #SBATCH --gpus-per-node=h100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --time=1:00:00  # Just 1 hour!
+#SBATCH --time=0:20:00  # Just 20 minutes for fast testing
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
 
@@ -13,7 +13,7 @@ echo "========================================"
 echo "MEDIUM TEST: Actual Training & Checkpointing"
 echo "========================================"
 echo "Job ID: $SLURM_JOB_ID"
-echo "Time limit: 1 hour"
+echo "Time limit: 20 minutes"
 echo "Will train for ~50 steps then test checkpoint resume"
 echo "========================================"
 
@@ -76,7 +76,7 @@ echo "========================================"
 # Run short training
 echo ""
 echo "Starting test training (50 steps)..."
-python train.py \
+$SLURM_TMPDIR/test_env/bin/python train.py \
     --model_name_or_path "Qwen/Qwen1.5-72B" \
     --use_qlora True \
     --train_embeddings True \
@@ -121,7 +121,7 @@ if [ $TRAIN_EXIT_CODE -eq 0 ]; then
         echo "Testing checkpoint resumption..."
 
         # Run 10 more steps from checkpoint
-        python train.py \
+        $SLURM_TMPDIR/test_env/bin/python train.py \
             --model_name_or_path "Qwen/Qwen1.5-72B" \
             --use_qlora True \
             --train_embeddings True \
