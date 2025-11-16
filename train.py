@@ -21,7 +21,14 @@ from transformers import (
     TrainingArguments,
     HfArgumentParser,
     DataCollatorForLanguageModeling,
+    BitsAndBytesConfig,
     set_seed,
+)
+from peft import (
+    LoraConfig,
+    get_peft_model,
+    prepare_model_for_kbit_training,
+    TaskType,
 )
 
 # Setup logging
@@ -48,6 +55,26 @@ class ModelArguments:
     use_flash_attention: bool = field(
         default=True,
         metadata={"help": "Whether to use Flash Attention 2"}
+    )
+    use_qlora: bool = field(
+        default=True,
+        metadata={"help": "Whether to use QLoRA (4-bit quantization + LoRA)"}
+    )
+    lora_r: int = field(
+        default=64,
+        metadata={"help": "LoRA rank"}
+    )
+    lora_alpha: int = field(
+        default=16,
+        metadata={"help": "LoRA alpha"}
+    )
+    lora_dropout: float = field(
+        default=0.05,
+        metadata={"help": "LoRA dropout"}
+    )
+    lora_target_modules: Optional[str] = field(
+        default="q_proj,k_proj,v_proj,o_proj,up_proj,gate_proj,down_proj",
+        metadata={"help": "Target modules for LoRA (comma-separated)"}
     )
 
 
@@ -150,25 +177,62 @@ def main():
     # Load model
     logger.info(f"Loading model from {model_args.model_name_or_path}")
 
-    model_kwargs = {
-        "cache_dir": model_args.cache_dir,
-        "trust_remote_code": True,
-        "torch_dtype": torch.bfloat16 if training_args.bf16 else torch.float16,
-    }
+    # Configure quantization for QLoRA
+    if model_args.use_qlora:
+        logger.info("Using QLoRA (4-bit quantization + LoRA adapters)")
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16 if training_args.bf16 else torch.float16,
+        )
+        model_kwargs = {
+            "cache_dir": model_args.cache_dir,
+            "trust_remote_code": True,
+            "quantization_config": bnb_config,
+            "device_map": "auto",
+        }
+    else:
+        logger.info("Using full precision training (not QLoRA)")
+        model_kwargs = {
+            "cache_dir": model_args.cache_dir,
+            "trust_remote_code": True,
+            "torch_dtype": torch.bfloat16 if training_args.bf16 else torch.float16,
+        }
+        # For DeepSpeed, don't use device_map
+        if training_args.deepspeed is None:
+            model_kwargs["device_map"] = "auto"
 
     # Add Flash Attention 2 if requested
     if model_args.use_flash_attention:
         model_kwargs["attn_implementation"] = "flash_attention_2"
         logger.info("Using Flash Attention 2")
 
-    # For DeepSpeed, don't use device_map
-    if training_args.deepspeed is None:
-        model_kwargs["device_map"] = "auto"
-
     model = AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         **model_kwargs
     )
+
+    # Apply QLoRA if requested
+    if model_args.use_qlora:
+        # Prepare model for k-bit training
+        model = prepare_model_for_kbit_training(model)
+
+        # Configure LoRA
+        target_modules = model_args.lora_target_modules.split(",")
+        lora_config = LoraConfig(
+            r=model_args.lora_r,
+            lora_alpha=model_args.lora_alpha,
+            target_modules=target_modules,
+            lora_dropout=model_args.lora_dropout,
+            bias="none",
+            task_type=TaskType.CAUSAL_LM,
+        )
+
+        # Apply LoRA adapters
+        model = get_peft_model(model, lora_config)
+        logger.info(f"LoRA configuration: r={model_args.lora_r}, alpha={model_args.lora_alpha}, dropout={model_args.lora_dropout}")
+        logger.info(f"Target modules: {target_modules}")
 
     # Enable gradient checkpointing if specified
     if training_args.gradient_checkpointing:
@@ -176,10 +240,13 @@ def main():
         logger.info("Gradient checkpointing enabled")
 
     # Log model info
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    logger.info(f"Total parameters: {total_params:,}")
-    logger.info(f"Trainable parameters: {trainable_params:,}")
+    if model_args.use_qlora:
+        model.print_trainable_parameters()
+    else:
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        logger.info(f"Total parameters: {total_params:,}")
+        logger.info(f"Trainable parameters: {trainable_params:,}")
 
     # Load datasets
     logger.info(f"Loading training data from {data_args.train_data_path}")

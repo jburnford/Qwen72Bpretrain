@@ -93,28 +93,48 @@ This will:
 
 ## Training
 
-### Configuration
+### Recommended: QLoRA on Single H100 (Default)
 
-Training uses DeepSpeed ZeRO-3 for memory-efficient distributed training:
+**This project uses QLoRA for efficient training on a single H100 GPU.**
 
-- **DeepSpeed config**: `configs/ds_config_zero3.json`
-- **Batch size**: 1 per GPU
-- **Gradient accumulation**: 16 steps
-- **Learning rate**: 2e-5 with cosine decay
-- **Warmup**: 5% of total steps
-- **Precision**: BF16
+QLoRA combines:
+- **4-bit quantization**: Loads 72B model in ~36 GB (vs 144 GB)
+- **LoRA adapters**: Trains only 1-2% of parameters
+- **Full model capacity**: Retains all 72B parameters' knowledge
+
+**Configuration:**
+- **GPU requirement**: 1× H100-80GB
+- **Batch size**: 4 per GPU (can be larger with QLoRA!)
+- **Gradient accumulation**: 8 steps
+- **Learning rate**: 1e-4 (higher for LoRA)
+- **LoRA rank**: 64
+- **LoRA alpha**: 16
+- **Precision**: BF16 compute, 4-bit storage
 - **Sequence length**: 2048 tokens
 
-### Single-Node Training (8 H100 GPUs)
+### Quick Start (Single H100)
 
 ```bash
-# Edit paths in scripts/train_single_node.sh first, then:
+# 1. Preprocess data (if not done)
+bash scripts/prepare_data.sh
+
+# 2. Edit account in scripts/train_qlora_single_gpu.sh
+# Change: #SBATCH --account=def-jic823
+
+# 3. Submit job
+sbatch scripts/train_qlora_single_gpu.sh
+```
+
+### Alternative: Full Fine-Tuning (8 H100 GPUs)
+
+If you have access to 8 H100s and want full parameter training:
+
+```bash
+# Uses DeepSpeed ZeRO-3 for distributed training
 sbatch scripts/train_single_node.sh
 ```
 
-### Multi-Node Training
-
-For larger scale training, modify the SLURM script to request multiple nodes.
+**Note**: Full fine-tuning trains all 72B parameters. It's slower, more expensive, and often not significantly better than QLoRA for domain adaptation.
 
 ### Monitor Training
 
@@ -188,16 +208,23 @@ python -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained
 
 ## Memory Requirements
 
-### Qwen 1.5 72B Model
+### QLoRA (Recommended - Single H100)
+
+- **Model (4-bit)**: ~36 GB VRAM
+- **LoRA adapters + optimizer**: ~5-10 GB
+- **Activations + batch**: ~10-20 GB
+- **Total**: ~50-65 GB ✅ **Fits on 1× H100-80GB**
+
+### Full Fine-Tuning (Alternative - 8 H100s)
 
 - **Inference (BF16)**: ~144GB VRAM
 - **Training with Adam**: ~577GB peak VRAM
-- **Minimum for continued pretraining**: 8× H100-80GB with DeepSpeed ZeRO-3
+- **Requires**: 8× H100-80GB with DeepSpeed ZeRO-3
 
 ### Resource Allocation
 
-- **Single node**: 8 H100 GPUs, 512GB RAM, 48 hours
-- **Multi-node**: 2-4 nodes (16-32 GPUs) for faster training
+- **QLoRA (recommended)**: 1 H100 GPU, 64GB RAM, 48 hours
+- **Full fine-tuning**: 8 H100 GPUs, 512GB RAM, 48 hours
 
 ## Next Steps
 
