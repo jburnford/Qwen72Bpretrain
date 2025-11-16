@@ -1,0 +1,40 @@
+# DRAC-Compatible Requirements
+# Install with: pip install --no-index <package>
+# Check availability with: avail_wheels <package>
+
+# Core ML libraries
+# H100 GPUs require PyTorch 2.3+
+torch>=2.3.0
+transformers>=4.36.0
+datasets>=2.16.0
+tokenizers>=0.15.0
+accelerate>=0.25.0
+
+# Distributed training
+# IMPORTANT: Load CUDA module before installing DeepSpeed
+deepspeed>=0.12.0
+
+# Parameter-efficient fine-tuning
+peft>=0.7.0
+bitsandbytes>=0.41.0
+flash-attn>=2.7.0
+
+# Utilities (available via scipy-stack module or pip)
+numpy>=1.24.0
+pandas>=2.0.0
+scikit-learn>=1.3.0
+tqdm>=4.66.0
+
+# Monitoring and logging
+tensorboard>=2.15.0
+# Note: wandb may need offline mode on Narval (no internet on compute nodes)
+wandb>=0.16.0
+
+# Data processing
+jsonlines>=4.0.0
+
+# Development (for local use or login nodes)
+jupyter>=1.0.0
+ipywidgets>=8.1.0
+matplotlib>=3.7.0
+seaborn>=0.13.0

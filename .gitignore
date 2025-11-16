@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+venv/
+env/
+ENV/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Training outputs
+output/
+logs/*.out
+logs/*.err
+checkpoints/
+runs/
+wandb/
+
+# Data (large files)
+data/*.jsonl
+data/*.json
+data/*.txt
+data/*.parquet
+!data/README.md
+
+# Model files (too large for git)
+*.bin
+*.safetensors
+*.ckpt
+*.pth
+*.pt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.log
+*.tmp
+temp/
