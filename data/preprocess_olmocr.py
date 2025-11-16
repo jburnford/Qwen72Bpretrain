@@ -13,6 +13,46 @@ from typing import List, Dict
 import argparse
 import random
 
+# Try to import langdetect, fall back to simple heuristic if not available
+try:
+    from langdetect import detect, LangDetectException
+    LANGDETECT_AVAILABLE = True
+except ImportError:
+    LANGDETECT_AVAILABLE = False
+    print("Warning: langdetect not available, using simple heuristic for language detection", file=sys.stderr)
+
+def is_english(text: str) -> bool:
+    """
+    Detect if text is English using langdetect or simple heuristic.
+    """
+    if len(text) < 50:
+        return True  # Too short to reliably detect, keep it
+
+    # Check for non-Latin scripts (e.g., Devanagari, Arabic, Chinese)
+    non_latin_chars = sum(1 for c in text if ord(c) > 0x024F)
+    if non_latin_chars > len(text) * 0.1:  # More than 10% non-Latin
+        return False
+
+    if LANGDETECT_AVAILABLE:
+        try:
+            lang = detect(text)
+            return lang == 'en'
+        except LangDetectException:
+            # Fall through to heuristic
+            pass
+
+    # Simple heuristic: check for common English words
+    text_lower = text.lower()
+    english_markers = ['the ', 'and ', 'of ', 'to ', 'in ', 'a ', 'is ', 'was ', 'that ', 'for ']
+    french_markers = ['le ', 'la ', 'de ', 'et ', 'des ', 'du ', 'une ', 'les ', 'dans ']
+
+    english_count = sum(1 for marker in english_markers if marker in text_lower)
+    french_count = sum(1 for marker in french_markers if marker in text_lower)
+
+    # If we find more English markers than French, consider it English
+    return english_count >= french_count
+
+
 def clean_text(text: str) -> str:
     """
     Minimal cleaning for early modern English text.
@@ -31,12 +71,14 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 
-def process_olmocr_file(filepath: Path, min_length: int = 50) -> List[str]:
+def process_olmocr_file(filepath: Path, min_length: int = 50, filter_english: bool = True) -> tuple:
     """
     Process a single OLMOCR results JSON file.
-    Returns list of text entries.
+    Returns tuple of (english_texts, total_texts_found, filtered_count).
     """
     texts = []
+    total_found = 0
+    filtered_out = 0
 
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
@@ -49,12 +91,19 @@ def process_olmocr_file(filepath: Path, min_length: int = 50) -> List[str]:
 
                     # Filter very short texts
                     if len(text) >= min_length:
+                        total_found += 1
+
+                        # Language filtering
+                        if filter_english and not is_english(text):
+                            filtered_out += 1
+                            continue
+
                         texts.append(text)
 
     except Exception as e:
         print(f"  Warning: Error processing {filepath}: {e}", file=sys.stderr)
 
-    return texts
+    return texts, total_found, filtered_out
 
 
 def pack_texts(texts: List[str], max_length: int = 2048, separator: str = "\n\n") -> List[str]:
@@ -96,6 +145,7 @@ def preprocess_corpus(
     pack_sequences: bool = True,
     max_seq_length: int = 2048,
     min_text_length: int = 50,
+    filter_english: bool = True,
     random_seed: int = 42,
 ):
     """
@@ -125,25 +175,35 @@ def preprocess_corpus(
     print(f"Pack sequences: {pack_sequences}")
     print(f"Max sequence length: {max_seq_length}")
     print(f"Min text length: {min_text_length}")
+    print(f"Filter English only: {filter_english}")
     print()
 
     # Collect all texts
     all_texts = []
+    total_texts_found = 0
+    total_filtered = 0
 
     print("Processing documents...")
     for i, doc_dir in enumerate(doc_dirs, 1):
         if i % 500 == 0:
-            print(f"  Processed {i:,}/{num_docs:,} documents ({len(all_texts):,} texts so far)...")
+            kept_pct = (len(all_texts) / total_texts_found * 100) if total_texts_found > 0 else 0
+            print(f"  Processed {i:,}/{num_docs:,} documents ({len(all_texts):,} English texts, {total_filtered:,} filtered, {kept_pct:.1f}% kept)...")
 
         olmocr_file = doc_dir / "olmocr_results.json"
 
         if not olmocr_file.exists():
             continue
 
-        texts = process_olmocr_file(olmocr_file, min_length=min_text_length)
+        texts, found, filtered = process_olmocr_file(olmocr_file, min_length=min_text_length, filter_english=filter_english)
         all_texts.extend(texts)
+        total_texts_found += found
+        total_filtered += filtered
 
-    print(f"\nTotal texts extracted: {len(all_texts):,}")
+    print(f"\nTotal texts found: {total_texts_found:,}")
+    print(f"English texts kept: {len(all_texts):,}")
+    print(f"Non-English filtered: {total_filtered:,}")
+    if total_texts_found > 0:
+        print(f"English percentage: {len(all_texts)/total_texts_found*100:.1f}%")
 
     # Pack sequences if requested
     if pack_sequences:
@@ -260,6 +320,11 @@ if __name__ == "__main__":
         help="Don't pack sequences (keep individual documents)"
     )
     parser.add_argument(
+        "--no_english_filter",
+        action="store_true",
+        help="Don't filter for English-only text (keep all languages)"
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=42,
@@ -278,5 +343,6 @@ if __name__ == "__main__":
         pack_sequences=not args.no_packing,
         max_seq_length=args.max_seq_length,
         min_text_length=args.min_text_length,
+        filter_english=not args.no_english_filter,
         random_seed=args.seed,
     )
