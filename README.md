@@ -93,14 +93,23 @@ This will:
 
 ## Training
 
-### Recommended: QLoRA on Single H100 (Default)
+### Recommended: Hybrid QLoRA on Single H100 (Default)
 
-**This project uses QLoRA for efficient training on a single H100 GPU.**
+**This project uses Hybrid QLoRA for efficient domain adaptation on a single H100 GPU.**
 
-QLoRA combines:
+Hybrid QLoRA combines:
 - **4-bit quantization**: Loads 72B model in ~36 GB (vs 144 GB)
-- **LoRA adapters**: Trains only 1-2% of parameters
-- **Full model capacity**: Retains all 72B parameters' knowledge
+- **LoRA adapters**: Trains attention/MLP projection layers (~1-2% of parameters)
+- **Unfrozen embeddings**: Trains vocabulary layers (embed_tokens + lm_head) in full precision
+- **Full model capacity**: Retains all 72B parameters' reasoning power
+
+**Why "Hybrid"?**
+Standard QLoRA freezes ALL weights including embeddings. For domain adaptation on historical text with:
+- Non-standard spelling ("wolde" vs "would")
+- Archaic vocabulary
+- OCR artifacts
+
+We need to adapt the model's **vocabulary understanding**. Hybrid QLoRA unfreezes the embedding layers while keeping the 72B backbone frozen, giving us true domain adaptation that fits on 1 H100.
 
 **Configuration:**
 - **GPU requirement**: 1× H100-80GB
@@ -114,16 +123,34 @@ QLoRA combines:
 
 ### Quick Start (Single H100)
 
+**⚠️ IMPORTANT: Test before full training!** See [Testing Workflow](docs/testing_workflow.md)
+
 ```bash
-# 1. Preprocess data (if not done)
+# STEP 1: Quick environment test (15 minutes)
+sbatch scripts/test_setup_quick.sh
+
+# STEP 2: Short training test (1 hour)
+sbatch scripts/test_training_short.sh
+
+# STEP 3: Once tests pass, preprocess full data
 bash scripts/prepare_data.sh
 
-# 2. Edit account in scripts/train_qlora_single_gpu.sh
+# STEP 4: Edit account in scripts/train_qlora_single_gpu.sh
 # Change: #SBATCH --account=def-jic823
 
-# 3. Submit job
+# STEP 5: Submit first training job (20 hours)
 sbatch scripts/train_qlora_single_gpu.sh
+
+# STEP 6: When job completes, continue training (auto-resumes from checkpoint)
+bash scripts/continue_training.sh  # Or just resubmit the same script
 ```
+
+**Important: 24-Hour Walltime Limit**
+- DRAC default queue has 24-hour maximum walltime
+- Jobs are configured for 20 hours (safe buffer)
+- Training **automatically resumes** from latest checkpoint
+- Simply resubmit the same script to continue training
+- Each job adds ~20 hours of training time
 
 ### Alternative: Full Fine-Tuning (8 H100 GPUs)
 
@@ -136,17 +163,48 @@ sbatch scripts/train_single_node.sh
 
 **Note**: Full fine-tuning trains all 72B parameters. It's slower, more expensive, and often not significantly better than QLoRA for domain adaptation.
 
+### Multi-Job Training Strategy
+
+Due to DRAC's 24-hour walltime limit, training uses a checkpoint-resume strategy:
+
+**Workflow:**
+1. **Job 1** (20h): Train from scratch → Save checkpoint every 500 steps
+2. **Job 2** (20h): Auto-detect latest checkpoint → Resume training → Save new checkpoints
+3. **Job 3** (20h): Continue from latest checkpoint...
+4. Repeat until training complete (typically 2-3 jobs for 3 epochs)
+
+**Example:**
+```bash
+# First job
+sbatch scripts/train_qlora_single_gpu.sh
+
+# Wait for completion, then continue
+bash scripts/continue_training.sh  # Interactive helper
+
+# Or manually resubmit
+sbatch scripts/train_qlora_single_gpu.sh  # Automatically resumes
+```
+
+**How it works:**
+- Script auto-detects checkpoints in output directory
+- Resumes from latest `checkpoint-XXXX` folder
+- Progress is never lost between jobs
+- Can run indefinitely by chaining jobs
+
 ### Monitor Training
 
 ```bash
 # Check job status
 squeue -u $USER
 
-# View logs
-tail -f logs/qwen72b-single-<jobid>.out
+# View logs (replace JOBID)
+tail -f logs/qwen72b-qlora-JOBID.out
 
-# View TensorBoard (on login node or local machine with port forwarding)
-tensorboard --logdir /scratch/$USER/qwen72b_output
+# Check current progress
+ls -ltr /scratch/$USER/qwen72b_qlora_output/checkpoint-*
+
+# View TensorBoard
+tensorboard --logdir /scratch/$USER/qwen72b_qlora_output
 ```
 
 ## Project Structure

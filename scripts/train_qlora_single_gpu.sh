@@ -5,7 +5,7 @@
 #SBATCH --gpus-per-node=h100:1  # Just 1 H100!
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --time=48:00:00
+#SBATCH --time=20:00:00  # Under 24h limit - job will auto-resume from checkpoint
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
 
@@ -97,7 +97,7 @@ LORA_ALPHA=16
 echo ""
 echo "========================================"
 echo "Training configuration:"
-echo "Method: QLoRA (4-bit quantization + LoRA)"
+echo "Method: Hybrid QLoRA (4-bit + LoRA + unfrozen embeddings)"
 echo "Model: $MODEL_NAME"
 echo "Training data: $TRAIN_DATA"
 echo "Validation data: $VALID_DATA"
@@ -110,13 +110,31 @@ echo "Max sequence length: $MAX_SEQ_LEN"
 echo "Number of epochs: $NUM_EPOCHS"
 echo "LoRA rank (r): $LORA_R"
 echo "LoRA alpha: $LORA_ALPHA"
+echo "Walltime limit: 20 hours (auto-resume from checkpoint)"
 echo "========================================"
 
-# Run training with QLoRA
-echo "Starting QLoRA training..."
+# Check for existing checkpoints
+if [ -d "$OUTPUT_DIR" ]; then
+    CHECKPOINT_COUNT=$(find $OUTPUT_DIR -maxdepth 1 -name "checkpoint-*" -type d 2>/dev/null | wc -l)
+    if [ $CHECKPOINT_COUNT -gt 0 ]; then
+        LATEST_CHECKPOINT=$(ls -td $OUTPUT_DIR/checkpoint-* 2>/dev/null | head -1)
+        echo "Found $CHECKPOINT_COUNT existing checkpoint(s)"
+        echo "Latest checkpoint: $LATEST_CHECKPOINT"
+        echo "Training will auto-resume from latest checkpoint"
+    else
+        echo "No existing checkpoints found - starting fresh"
+    fi
+else
+    echo "Output directory does not exist - starting fresh"
+fi
+echo ""
+
+# Run training with Hybrid QLoRA
+echo "Starting Hybrid QLoRA training..."
 python train.py \
     --model_name_or_path $MODEL_NAME \
     --use_qlora True \
+    --train_embeddings True \
     --lora_r $LORA_R \
     --lora_alpha $LORA_ALPHA \
     --lora_dropout 0.05 \
@@ -143,6 +161,9 @@ python train.py \
     --max_grad_norm 1.0 \
     --report_to "tensorboard" \
     --use_flash_attention True
+
+# Note: Training will automatically resume from the latest checkpoint if found
+# To continue training, just resubmit this same job script
 
 echo ""
 echo "========================================"

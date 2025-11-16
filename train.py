@@ -76,6 +76,10 @@ class ModelArguments:
         default="q_proj,k_proj,v_proj,o_proj,up_proj,gate_proj,down_proj",
         metadata={"help": "Target modules for LoRA (comma-separated)"}
     )
+    train_embeddings: bool = field(
+        default=True,
+        metadata={"help": "Whether to unfreeze and train embedding layers (embed_tokens, lm_head)"}
+    )
 
 
 @dataclass
@@ -129,6 +133,7 @@ class CustomTrainingArguments(TrainingArguments):
     report_to: str = field(default="tensorboard")
     deepspeed: Optional[str] = field(default=None)
     max_grad_norm: float = field(default=1.0)
+    resume_from_checkpoint: Optional[str] = field(default=None)
 
     # Distributed training settings
     ddp_find_unused_parameters: bool = field(default=False)
@@ -234,6 +239,46 @@ def main():
         logger.info(f"LoRA configuration: r={model_args.lora_r}, alpha={model_args.lora_alpha}, dropout={model_args.lora_dropout}")
         logger.info(f"Target modules: {target_modules}")
 
+        # Unfreeze embedding layers for domain adaptation
+        if model_args.train_embeddings:
+            logger.info("Unfreezing embedding layers (embed_tokens, lm_head) for vocabulary adaptation")
+
+            # Access the base model under the PEFT wrapper
+            embedding_modules = []
+
+            # Unfreeze input embeddings (embed_tokens)
+            if hasattr(model.base_model.model, 'model'):
+                # For models with model.model structure (like Qwen)
+                if hasattr(model.base_model.model.model, 'embed_tokens'):
+                    model.base_model.model.model.embed_tokens.requires_grad_(True)
+                    embedding_modules.append("model.embed_tokens")
+            elif hasattr(model.base_model.model, 'embed_tokens'):
+                model.base_model.model.embed_tokens.requires_grad_(True)
+                embedding_modules.append("embed_tokens")
+
+            # Unfreeze output embeddings (lm_head)
+            if hasattr(model.base_model.model, 'lm_head'):
+                model.base_model.model.lm_head.requires_grad_(True)
+                embedding_modules.append("lm_head")
+
+            logger.info(f"Unfrozen embedding modules: {embedding_modules}")
+
+            # Convert embeddings to full precision for training
+            for module_name in embedding_modules:
+                try:
+                    if "embed_tokens" in module_name:
+                        if hasattr(model.base_model.model, 'model'):
+                            embed_module = model.base_model.model.model.embed_tokens
+                        else:
+                            embed_module = model.base_model.model.embed_tokens
+                        # Convert to bf16 or fp16 for training
+                        embed_module.to(torch.bfloat16 if training_args.bf16 else torch.float16)
+                    elif "lm_head" in module_name:
+                        lm_head_module = model.base_model.model.lm_head
+                        lm_head_module.to(torch.bfloat16 if training_args.bf16 else torch.float16)
+                except Exception as e:
+                    logger.warning(f"Could not convert {module_name} to training dtype: {e}")
+
     # Enable gradient checkpointing if specified
     if training_args.gradient_checkpointing:
         model.gradient_checkpointing_enable()
@@ -241,7 +286,19 @@ def main():
 
     # Log model info
     if model_args.use_qlora:
+        logger.info("=" * 50)
+        logger.info("Trainable Parameters Summary:")
         model.print_trainable_parameters()
+
+        # Also log embedding parameters separately
+        if model_args.train_embeddings:
+            embed_params = 0
+            for name, param in model.named_parameters():
+                if 'embed' in name.lower() or 'lm_head' in name.lower():
+                    if param.requires_grad:
+                        embed_params += param.numel()
+            logger.info(f"Embedding layer parameters: {embed_params:,}")
+        logger.info("=" * 50)
     else:
         total_params = sum(p.numel() for p in model.parameters())
         trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -318,9 +375,30 @@ def main():
         tokenizer=tokenizer,
     )
 
+    # Auto-detect checkpoint for resumption
+    checkpoint = None
+    if training_args.resume_from_checkpoint is not None:
+        checkpoint = training_args.resume_from_checkpoint
+        logger.info(f"Resuming from specified checkpoint: {checkpoint}")
+    else:
+        # Auto-detect latest checkpoint
+        output_dir = Path(training_args.output_dir)
+        if output_dir.exists():
+            checkpoints = list(output_dir.glob("checkpoint-*"))
+            if checkpoints:
+                # Sort by step number
+                checkpoints.sort(key=lambda x: int(x.name.split("-")[1]))
+                checkpoint = str(checkpoints[-1])
+                logger.info(f"Auto-detected latest checkpoint: {checkpoint}")
+                logger.info(f"Resuming training from step {checkpoints[-1].name.split('-')[1]}")
+
     # Training
-    logger.info("Starting training...")
-    train_result = trainer.train()
+    if checkpoint:
+        logger.info(f"Starting training from checkpoint: {checkpoint}")
+    else:
+        logger.info("Starting training from scratch...")
+
+    train_result = trainer.train(resume_from_checkpoint=checkpoint)
 
     # Save final model
     logger.info("Saving final model...")
