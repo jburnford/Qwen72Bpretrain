@@ -25,6 +25,7 @@ module list
 export HF_HOME="/scratch/$USER/.cache/huggingface"
 export TRANSFORMERS_CACHE="/scratch/$USER/.cache/huggingface/models"
 export HF_DATASETS_CACHE="/scratch/$USER/.cache/huggingface/datasets"
+export BNB_CUDA_VERSION=122  # Tell bitsandbytes to use CUDA 12.2
 
 mkdir -p $HF_HOME $TRANSFORMERS_CACHE $HF_DATASETS_CACHE
 
