@@ -51,10 +51,14 @@ source $SLURM_TMPDIR/qwen_env/bin/activate
 echo "Installing packages..."
 pip install --no-index --upgrade pip
 pip install --no-index torch transformers datasets tokenizers accelerate
-pip install --no-index peft bitsandbytes flash-attn
+pip install --no-index peft flash-attn
 pip install --no-index numpy pandas scikit-learn tqdm tensorboard
 # Try to install jsonlines from wheelhouse first
 pip install --no-index jsonlines 2>/dev/null || echo "Note: jsonlines not in wheelhouse, will be installed later if needed"
+
+# Install bitsandbytes from PyPI (DRAC wheelhouse version lacks CUDA binaries)
+echo "Installing bitsandbytes from PyPI with CUDA support..."
+pip install bitsandbytes
 
 # Verify installation
 echo ""

@@ -39,7 +39,11 @@ source $SLURM_TMPDIR/test_env/bin/activate
 echo ""
 echo "3. Installing packages..."
 pip install --no-index --upgrade pip
-pip install --no-index torch transformers datasets tokenizers accelerate peft bitsandbytes flash-attn
+pip install --no-index torch transformers datasets tokenizers accelerate peft flash-attn
+
+# Install bitsandbytes from PyPI (DRAC wheelhouse version lacks CUDA binaries)
+echo "Installing bitsandbytes from PyPI..."
+pip install bitsandbytes
 
 # Verify installations
 echo ""

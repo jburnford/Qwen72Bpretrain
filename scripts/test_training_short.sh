@@ -36,9 +36,13 @@ source $SLURM_TMPDIR/test_env/bin/activate
 # Install packages
 echo "Installing packages..."
 pip install --no-index --upgrade pip
-pip install --no-index torch transformers datasets tokenizers accelerate peft bitsandbytes flash-attn tqdm tensorboard
+pip install --no-index torch transformers datasets tokenizers accelerate peft flash-attn tqdm tensorboard
 # Try to install jsonlines from wheelhouse, fallback to pip if not available
 pip install --no-index jsonlines 2>/dev/null || echo "Note: jsonlines not in wheelhouse, will be installed later if needed"
+
+# Install bitsandbytes from PyPI (DRAC wheelhouse version lacks CUDA binaries)
+echo "Installing bitsandbytes from PyPI with CUDA support..."
+pip install bitsandbytes
 
 # Data paths
 TRAIN_DATA="/scratch/$USER/early_modern_data/train.jsonl"
