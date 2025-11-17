@@ -17,14 +17,14 @@ echo "Time limit: 20 minutes"
 echo "Will train for ~50 steps then test checkpoint resume"
 echo "========================================"
 
-# Load modules
-module load StdEnv/2023 gcc cuda/12.2 python/3.11 cudnn arrow
+# Load modules - Use CUDA 12.6 for better bitsandbytes compatibility
+module load StdEnv/2023 gcc cuda/12.6 python/3.11 cudnn arrow
 
 # Setup environment
 export HF_HOME="/scratch/$USER/.cache/huggingface"
 export TRANSFORMERS_CACHE="/scratch/$USER/.cache/huggingface/models"
 export HF_DATASETS_CACHE="/scratch/$USER/.cache/huggingface/datasets"
-export BNB_CUDA_VERSION=122  # Tell bitsandbytes to use CUDA 12.2
+# Don't set BNB_CUDA_VERSION - let bitsandbytes auto-detect
 
 mkdir -p $HF_HOME $TRANSFORMERS_CACHE $HF_DATASETS_CACHE
 

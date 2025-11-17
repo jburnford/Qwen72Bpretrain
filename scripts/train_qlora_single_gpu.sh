@@ -21,10 +21,10 @@ echo "CPUs per task: $SLURM_CPUS_PER_TASK"
 echo "Working directory: $(pwd)"
 echo "========================================"
 
-# Load required modules
+# Load required modules - Use CUDA 12.6 for better bitsandbytes compatibility
 echo "Loading modules..."
 module load StdEnv/2023
-module load gcc cuda/12.2 python/3.11 cudnn arrow
+module load gcc cuda/12.6 python/3.11 cudnn arrow
 
 # Display loaded modules
 module list
@@ -33,7 +33,7 @@ module list
 export HF_HOME="/scratch/$USER/.cache/huggingface"
 export TRANSFORMERS_CACHE="/scratch/$USER/.cache/huggingface/models"
 export HF_DATASETS_CACHE="/scratch/$USER/.cache/huggingface/datasets"
-export BNB_CUDA_VERSION=122  # Tell bitsandbytes to use CUDA 12.2
+# Don't set BNB_CUDA_VERSION - let bitsandbytes auto-detect
 
 echo "HuggingFace cache: $HF_HOME"
 
