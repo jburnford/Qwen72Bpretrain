@@ -329,17 +329,15 @@ def main():
         # Extract text from examples
         texts = examples["text"]
 
-        # Tokenize
+        # Tokenize (don't pad here - let DataCollator handle it)
         tokenized = tokenizer(
             texts,
             max_length=data_args.max_seq_length,
             truncation=True,
-            padding="max_length",
-            return_tensors="pt",
         )
 
         # For causal language modeling, labels are the same as input_ids
-        tokenized["labels"] = tokenized["input_ids"].clone()
+        tokenized["labels"] = tokenized["input_ids"].copy()
 
         return tokenized
 

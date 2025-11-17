@@ -52,7 +52,8 @@ pip install --no-index --upgrade pip
 pip install --no-index torch transformers datasets tokenizers accelerate
 pip install --no-index peft bitsandbytes flash-attn
 pip install --no-index numpy pandas scikit-learn tqdm tensorboard
-pip install jsonlines  # May not be in wheelhouse
+# Try to install jsonlines from wheelhouse first
+pip install --no-index jsonlines 2>/dev/null || echo "Note: jsonlines not in wheelhouse, will be installed later if needed"
 
 # Verify installation
 echo ""
