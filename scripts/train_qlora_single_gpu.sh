@@ -24,7 +24,7 @@ echo "========================================"
 # Load required modules
 echo "Loading modules..."
 module load StdEnv/2023
-module load gcc cuda/12.2 python/3.11 cudnn
+module load gcc cuda/12.2 python/3.11 cudnn arrow
 
 # Display loaded modules
 module list

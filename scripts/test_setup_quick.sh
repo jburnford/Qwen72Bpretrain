@@ -18,7 +18,7 @@ echo "========================================"
 
 # Load modules
 echo "1. Loading modules..."
-module load StdEnv/2023 gcc cuda/12.2 python/3.11 cudnn
+module load StdEnv/2023 gcc cuda/12.2 python/3.11 cudnn arrow
 module list
 
 # Setup environment
